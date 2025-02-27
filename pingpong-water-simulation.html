@@ -1,0 +1,360 @@
+<!DOCTYPE html>
+<html lang="ko">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>탁구공 수조 시뮬레이션</title>
+    <style>
+        body { 
+            margin: 0; 
+            overflow: hidden; 
+            background-color: #f0f0f0;
+            font-family: Arial, sans-serif;
+        }
+        #canvas { 
+            width: 100%; 
+            height: 100%;
+            display: block;
+        }
+        #controls {
+            position: absolute;
+            bottom: 20px;
+            left: 50%;
+            transform: translateX(-50%);
+            z-index: 100;
+            text-align: center;
+            display: flex;
+            gap: 15px;
+        }
+        button {
+            padding: 12px 24px;
+            font-size: 18px;
+            border: none;
+            border-radius: 8px;
+            background-color: #2196F3;
+            color: white;
+            cursor: pointer;
+            box-shadow: 0 4px 8px rgba(0,0,0,0.2);
+            transition: all 0.3s;
+        }
+        button:hover {
+            background-color: #0b7dda;
+            transform: scale(1.05);
+        }
+        button:active {
+            transform: scale(0.98);
+        }
+        #toggleWater {
+            background-color: #4CAF50;
+        }
+        #toggleWater.off {
+            background-color: #f44336;
+        }
+    </style>
+</head>
+<body>
+    <div id="controls">
+        <button id="addBall">탁구공 추가하기</button>
+        <button id="toggleWater">물 제거하기</button>
+    </div>
+    <canvas id="canvas"></canvas>
+
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/three.js/r128/three.min.js"></script>
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/cannon.js/0.6.2/cannon.min.js"></script>
+    
+    <script>
+        // Three.js 및 CANNON.js 설정
+        let scene, camera, renderer, world;
+        let balls = [];
+        let bodies = [];
+        let pool, poolBody;
+        let water;
+        let waterExists = true;
+        
+        // 상수 및 변수 설정
+        const ballRadius = 0.2;
+        const waterColor = 0x89CFF0;
+        const waterOpacity = 0.7;
+        const poolWidth = 5;
+        const poolHeight = 3;
+        const poolDepth = 3;
+        const wallThickness = 0.1;
+        
+        // 초기화 함수
+        function init() {
+            // Scene 설정
+            scene = new THREE.Scene();
+            scene.background = new THREE.Color(0xADD8E6);
+            
+            // Camera 설정
+            camera = new THREE.PerspectiveCamera(75, window.innerWidth / window.innerHeight, 0.1, 100);
+            camera.position.set(0, 5, 7);
+            camera.lookAt(0, 0, 0);
+            
+            // Renderer 설정
+            renderer = new THREE.WebGLRenderer({
+                canvas: document.getElementById('canvas'),
+                antialias: true
+            });
+            renderer.setSize(window.innerWidth, window.innerHeight);
+            renderer.shadowMap.enabled = true;
+            
+            // 조명 설정
+            const ambientLight = new THREE.AmbientLight(0xffffff, 0.6);
+            scene.add(ambientLight);
+            
+            const directionalLight = new THREE.DirectionalLight(0xffffff, 0.8);
+            directionalLight.position.set(10, 20, 10);
+            directionalLight.castShadow = true;
+            directionalLight.shadow.mapSize.width = 2048;
+            directionalLight.shadow.mapSize.height = 2048;
+            scene.add(directionalLight);
+            
+            // 물리 엔진 설정 (CANNON.js)
+            world = new CANNON.World();
+            world.gravity.set(0, -9.82, 0); // 중력 설정
+            world.broadphase = new CANNON.NaiveBroadphase();
+            world.solver.iterations = 10;
+            
+            // 수조 생성
+            createPool();
+            
+            // 물 생성
+            createWater();
+            
+            // 이벤트 리스너 추가
+            window.addEventListener('resize', onWindowResize);
+            document.getElementById('addBall').addEventListener('click', addBall);
+            document.getElementById('toggleWater').addEventListener('click', toggleWater);
+        }
+        
+        // 수조 생성 함수
+        function createPool() {
+            // Three.js 수조 생성
+            pool = new THREE.Group();
+            scene.add(pool);
+            
+            // 바닥
+            const floorGeometry = new THREE.BoxGeometry(poolWidth, wallThickness, poolDepth);
+            const floorMaterial = new THREE.MeshPhongMaterial({ color: 0xCCCCCC });
+            const floor = new THREE.Mesh(floorGeometry, floorMaterial);
+            floor.position.y = -poolHeight / 2;
+            floor.receiveShadow = true;
+            pool.add(floor);
+            
+            // 왼쪽 벽
+            const leftWallGeometry = new THREE.BoxGeometry(wallThickness, poolHeight, poolDepth);
+            const leftWall = new THREE.Mesh(leftWallGeometry, floorMaterial);
+            leftWall.position.set(-poolWidth / 2, 0, 0);
+            leftWall.receiveShadow = true;
+            pool.add(leftWall);
+            
+            // 오른쪽 벽
+            const rightWall = new THREE.Mesh(leftWallGeometry, floorMaterial);
+            rightWall.position.set(poolWidth / 2, 0, 0);
+            rightWall.receiveShadow = true;
+            pool.add(rightWall);
+            
+            // 뒷쪽 벽
+            const backWallGeometry = new THREE.BoxGeometry(poolWidth, poolHeight, wallThickness);
+            const backWall = new THREE.Mesh(backWallGeometry, floorMaterial);
+            backWall.position.set(0, 0, -poolDepth / 2);
+            backWall.receiveShadow = true;
+            pool.add(backWall);
+            
+            // 앞쪽 벽
+            const frontWall = new THREE.Mesh(backWallGeometry, floorMaterial);
+            frontWall.position.set(0, 0, poolDepth / 2);
+            // 앞쪽 벽은 투명하게 처리 (수조 안을 보기 위함)
+            frontWall.material = new THREE.MeshPhongMaterial({ 
+                color: 0xCCCCCC, 
+                transparent: true, 
+                opacity: 0.3 
+            });
+            frontWall.receiveShadow = true;
+            pool.add(frontWall);
+            
+            // 물리 바디 생성 (CANNON.js)
+            // 바닥
+            const floorShape = new CANNON.Box(new CANNON.Vec3(poolWidth / 2, wallThickness / 2, poolDepth / 2));
+            const floorBody = new CANNON.Body({ mass: 0 }); // 질량 0 = 고정 바디
+            floorBody.addShape(floorShape);
+            floorBody.position.set(0, -poolHeight / 2, 0);
+            world.addBody(floorBody);
+            
+            // 왼쪽 벽
+            const wallShape = new CANNON.Box(new CANNON.Vec3(wallThickness / 2, poolHeight / 2, poolDepth / 2));
+            const leftWallBody = new CANNON.Body({ mass: 0 });
+            leftWallBody.addShape(wallShape);
+            leftWallBody.position.set(-poolWidth / 2, 0, 0);
+            world.addBody(leftWallBody);
+            
+            // 오른쪽 벽
+            const rightWallBody = new CANNON.Body({ mass: 0 });
+            rightWallBody.addShape(wallShape);
+            rightWallBody.position.set(poolWidth / 2, 0, 0);
+            world.addBody(rightWallBody);
+            
+            // 뒷쪽 벽
+            const backWallShape = new CANNON.Box(new CANNON.Vec3(poolWidth / 2, poolHeight / 2, wallThickness / 2));
+            const backWallBody = new CANNON.Body({ mass: 0 });
+            backWallBody.addShape(backWallShape);
+            backWallBody.position.set(0, 0, -poolDepth / 2);
+            world.addBody(backWallBody);
+            
+            // 앞쪽 벽
+            const frontWallBody = new CANNON.Body({ mass: 0 });
+            frontWallBody.addShape(backWallShape);
+            frontWallBody.position.set(0, 0, poolDepth / 2);
+            world.addBody(frontWallBody);
+        }
+        
+        // 물 생성 함수
+        function createWater() {
+            const waterGeometry = new THREE.BoxGeometry(poolWidth - wallThickness * 2, poolHeight * 0.8, poolDepth - wallThickness * 2);
+            const waterMaterial = new THREE.MeshPhongMaterial({
+                color: waterColor,
+                transparent: true,
+                opacity: waterOpacity,
+                side: THREE.DoubleSide
+            });
+            water = new THREE.Mesh(waterGeometry, waterMaterial);
+            water.position.y = -poolHeight * 0.1; // 수면 높이 조정
+            scene.add(water);
+            waterExists = true;
+        }
+        
+        // 물 토글 함수
+        function toggleWater() {
+            const toggleButton = document.getElementById('toggleWater');
+            
+            if (waterExists) {
+                // 물 제거
+                scene.remove(water);
+                waterExists = false;
+                toggleButton.textContent = '물 추가하기';
+                toggleButton.classList.add('off');
+                
+                // 모든 공에서 물 효과 제거
+                for (let i = 0; i < bodies.length; i++) {
+                    bodies[i].isInWater = false;
+                    bodies[i].linearDamping = 0.3;
+                    bodies[i].angularDamping = 0.3;
+                }
+            } else {
+                // 물 추가
+                scene.add(water);
+                waterExists = true;
+                toggleButton.textContent = '물 제거하기';
+                toggleButton.classList.remove('off');
+                
+                // 물 속에 있는 공들 체크하여 물 효과 적용
+                const waterSurfaceY = water.position.y + water.geometry.parameters.height / 2;
+                for (let i = 0; i < balls.length; i++) {
+                    const isInWater = balls[i].position.y < waterSurfaceY;
+                    bodies[i].isInWater = isInWater;
+                    
+                    if (isInWater) {
+                        bodies[i].linearDamping = 0.8;
+                        bodies[i].angularDamping = 0.8;
+                    }
+                }
+            }
+        }
+        
+        // 탁구공 추가 함수
+        function addBall() {
+            // 탁구공 위치 랜덤화 (수조 위에서 시작)
+            const x = (Math.random() - 0.5) * 2;
+            const y = poolHeight / 2 + 1 + Math.random() * 2; // 수조 위쪽에서 시작
+            const z = (Math.random() - 0.5) * 2;
+            
+            // Three.js 탁구공 생성
+            const ballGeometry = new THREE.SphereGeometry(ballRadius, 32, 32);
+            const ballMaterial = new THREE.MeshPhongMaterial({ color: 0xFFFFFF });
+            const ball = new THREE.Mesh(ballGeometry, ballMaterial);
+            ball.position.set(x, y, z);
+            ball.castShadow = true;
+            scene.add(ball);
+            balls.push(ball);
+            
+            // CANNON.js 탁구공 물리 바디 생성
+            const ballShape = new CANNON.Sphere(ballRadius);
+            const ballBody = new CANNON.Body({
+                mass: 0.0027, // 탁구공의 실제 질량 (kg)
+                shape: ballShape,
+                position: new CANNON.Vec3(x, y, z),
+                material: new CANNON.Material({ restitution: 0.9 }) // 탄성계수 (탄력성)
+            });
+            
+            // 물과의 상호작용을 위한 속도 감쇠 추가 (물속에서의 저항)
+            ballBody.linearDamping = 0.3;
+            ballBody.angularDamping = 0.3;
+            
+            world.addBody(ballBody);
+            bodies.push(ballBody);
+            
+            // 공이 물 속에 있는지 여부를 저장할 속성 추가
+            ballBody.isInWater = false;
+        }
+        
+        // 창 크기 조정 시 호출되는 함수
+        function onWindowResize() {
+            camera.aspect = window.innerWidth / window.innerHeight;
+            camera.updateProjectionMatrix();
+            renderer.setSize(window.innerWidth, window.innerHeight);
+        }
+        
+        // 애니메이션 루프
+        function animate() {
+            requestAnimationFrame(animate);
+            
+            // 물리 시뮬레이션 업데이트
+            world.step(1/60);
+            
+            // 각 공의 위치 및 회전 업데이트
+            for (let i = 0; i < balls.length; i++) {
+                balls[i].position.copy(bodies[i].position);
+                balls[i].quaternion.copy(bodies[i].quaternion);
+                
+                // 물과의 상호작용 체크 (물이 있을 때만)
+                if (waterExists) {
+                    const waterSurfaceY = water.position.y + water.geometry.parameters.height / 2;
+                    const isInWater = balls[i].position.y < waterSurfaceY;
+                    
+                    if (isInWater !== bodies[i].isInWater) {
+                        bodies[i].isInWater = isInWater;
+                        
+                        if (isInWater) {
+                            // 물 속에 들어왔을 때 부력 및 저항 효과 적용
+                            bodies[i].linearDamping = 0.8; // 물 속 저항 증가
+                            bodies[i].angularDamping = 0.8;
+                            
+                            // 부력 효과를 위한 힘 적용 (탁구공은 물에 뜨는 경향이 있음)
+                            const buoyancyForce = new CANNON.Vec3(0, 0.022, 0); // 부력
+                            bodies[i].applyForce(buoyancyForce, bodies[i].position);
+                        } else {
+                            // 물 밖으로 나왔을 때 원래의 감쇠 값으로 복원
+                            bodies[i].linearDamping = 0.3;
+                            bodies[i].angularDamping = 0.3;
+                        }
+                    }
+                    
+                    // 물 속에 있으면 계속 부력 적용
+                    if (bodies[i].isInWater) {
+                        const depth = waterSurfaceY - balls[i].position.y;
+                        const buoyancy = Math.min(depth * 0.03, 0.1); // 깊이에 따른 부력 조정
+                        bodies[i].applyForce(new CANNON.Vec3(0, buoyancy, 0), bodies[i].position);
+                    }
+                }
+            }
+            
+            renderer.render(scene, camera);
+        }
+        
+        // 초기화 및 애니메이션 시작
+        init();
+        animate();
+    </script>
+</body>
+</html>

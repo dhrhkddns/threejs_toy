@@ -1,0 +1,431 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Neo-Brutalist Restaurant</title>
+  <script src="https://cdnjs.cloudflare.com/ajax/libs/p5.js/1.7.0/p5.min.js"></script>
+  <style>
+    body {
+      margin: 0;
+      padding: 0;
+      font-family: 'Courier New', monospace;
+      background-color: #f0f0f0;
+      overflow: hidden;
+    }
+
+    #container {
+      display: flex;
+      flex-direction: column;
+      height: 100vh;
+    }
+
+    header {
+      background-color: #ff5252;
+      color: black;
+      padding: 20px;
+      font-size: 24px;
+      font-weight: bold;
+      text-transform: uppercase;
+      border: 5px solid black;
+      box-shadow: 8px 8px 0px black;
+      margin: 20px;
+      z-index: 10;
+    }
+
+    #content {
+      display: flex;
+      flex: 1;
+      margin: 0 20px 20px 20px;
+    }
+
+    #menu {
+      flex: 1;
+      background-color: #ffeb3b;
+      border: 5px solid black;
+      box-shadow: 8px 8px 0px black;
+      padding: 20px;
+      margin-right: 20px;
+      overflow-y: auto;
+      max-height: 70vh;
+    }
+
+    #canvas-container {
+      flex: 2;
+      background-color: #4caf50;
+      border: 5px solid black;
+      box-shadow: 8px 8px 0px black;
+      position: relative;
+    }
+
+    .menu-item {
+      background-color: white;
+      border: 3px solid black;
+      margin-bottom: 15px;
+      padding: 15px;
+      cursor: pointer;
+      transition: transform 0.2s, box-shadow 0.2s;
+    }
+
+    .menu-item:hover {
+      transform: translate(-3px, -3px);
+      box-shadow: 5px 5px 0px black;
+    }
+
+    .menu-item h3 {
+      margin: 0 0 10px 0;
+      text-transform: uppercase;
+    }
+
+    .menu-item p {
+      margin: 0;
+    }
+
+    .menu-item .price {
+      font-weight: bold;
+      font-size: 20px;
+      margin-top: 10px;
+    }
+
+    #order-button {
+      background-color: #2196f3;
+      color: black;
+      border: 3px solid black;
+      padding: 15px;
+      margin-top: 20px;
+      font-family: 'Courier New', monospace;
+      font-weight: bold;
+      text-transform: uppercase;
+      font-size: 18px;
+      cursor: pointer;
+      transition: transform 0.2s, box-shadow 0.2s;
+    }
+
+    #order-button:hover {
+      transform: translate(-3px, -3px);
+      box-shadow: 5px 5px 0px black;
+    }
+
+    .cart-badge {
+      position: absolute;
+      top: -10px;
+      right: -10px;
+      background-color: #ff5252;
+      color: black;
+      border: 2px solid black;
+      border-radius: 50%;
+      width: 25px;
+      height: 25px;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      font-weight: bold;
+    }
+  </style>
+</head>
+<body>
+  <div id="container">
+    <header>
+      BRUTAL BITES
+    </header>
+    <div id="content">
+      <div id="menu">
+        <div class="menu-item" data-item="burger">
+          <h3>Brutal Burger</h3>
+          <p>Heavyweight beef patty, harsh cheddar, raw onions, concrete bun</p>
+          <div class="price">$12.99</div>
+        </div>
+        <div class="menu-item" data-item="pizza">
+          <h3>Pixel Pizza</h3>
+          <p>Blocky mozzarella, digital pepperoni, rigid basil, on a grid-based crust</p>
+          <div class="price">$15.99</div>
+        </div>
+        <div class="menu-item" data-item="salad">
+          <h3>Structural Salad</h3>
+          <p>Exposed greens, industrial tomatoes, unrefined olive oil</p>
+          <div class="price">$9.99</div>
+        </div>
+        <div class="menu-item" data-item="pasta">
+          <h3>Post-modern Pasta</h3>
+          <p>Deconstructed noodles, brutalist sauce, angular herbs</p>
+          <div class="price">$14.99</div>
+        </div>
+        <div class="menu-item" data-item="dessert">
+          <h3>Concrete Cake</h3>
+          <p>Solid chocolate foundation, stark vanilla contrast, architectural berries</p>
+          <div class="price">$8.99</div>
+        </div>
+        <button id="order-button">PLACE ORDER <span class="cart-badge">0</span></button>
+      </div>
+      <div id="canvas-container"></div>
+    </div>
+  </div>
+
+  <script>
+    let draggableItems = [];
+    let cartCount = 0;
+    let foodImages = {};
+    
+    function setup() {
+      const canvasContainer = document.getElementById('canvas-container');
+      const canvas = createCanvas(canvasContainer.offsetWidth, canvasContainer.offsetHeight);
+      canvas.parent('canvas-container');
+      
+      // Add event listeners to menu items
+      const menuItems = document.querySelectorAll('.menu-item');
+      menuItems.forEach(item => {
+        item.addEventListener('click', function() {
+          const foodType = this.getAttribute('data-item');
+          addFoodToCanvas(foodType);
+          cartCount++;
+          updateCartBadge();
+        });
+      });
+      
+      // Add event listener to order button
+      const orderButton = document.getElementById('order-button');
+      orderButton.addEventListener('click', function() {
+        if (cartCount > 0) {
+          alert('Your brutalist feast is being prepared!');
+          draggableItems = [];
+          cartCount = 0;
+          updateCartBadge();
+        } else {
+          alert('Your cart is empty. Add some brutal bites!');
+        }
+      });
+    }
+    
+    function draw() {
+      background('#4caf50');
+      
+      // Draw neo-brutalist pattern in the background
+      drawBrutalistPattern();
+      
+      // Draw all draggable food items
+      for (let i = 0; i < draggableItems.length; i++) {
+        draggableItems[i].display();
+      }
+    }
+    
+    function drawBrutalistPattern() {
+      stroke(0);
+      strokeWeight(2);
+      
+      // Draw grid pattern
+      for (let x = 0; x < width; x += 50) {
+        for (let y = 0; y < height; y += 50) {
+          if (random() > 0.92) {
+            fill(random(['#ff5252', '#ffeb3b', '#2196f3', 'white']));
+            rect(x, y, 50, 50);
+          }
+        }
+      }
+      
+      // Draw some random bold lines
+      for (let i = 0; i < 5; i++) {
+        strokeWeight(random(2, 8));
+        line(random(width), 0, random(width), height);
+        line(0, random(height), width, random(height));
+      }
+    }
+    
+    function addFoodToCanvas(foodType) {
+      const x = random(50, width - 100);
+      const y = random(50, height - 100);
+      
+      draggableItems.push(new DraggableFood(x, y, foodType));
+    }
+    
+    function updateCartBadge() {
+      document.querySelector('.cart-badge').textContent = cartCount;
+    }
+    
+    function mousePressed() {
+      // Check if any food item is being clicked
+      for (let i = draggableItems.length - 1; i >= 0; i--) {
+        if (draggableItems[i].isHovering(mouseX, mouseY)) {
+          draggableItems[i].dragging = true;
+          // Move this item to the end of the array so it appears on top
+          const temp = draggableItems[i];
+          draggableItems.splice(i, 1);
+          draggableItems.push(temp);
+          break;
+        }
+      }
+    }
+    
+    function mouseReleased() {
+      // Stop dragging all items
+      for (let i = 0; i < draggableItems.length; i++) {
+        draggableItems[i].dragging = false;
+      }
+    }
+    
+    class DraggableFood {
+      constructor(x, y, foodType) {
+        this.x = x;
+        this.y = y;
+        this.width = 100;
+        this.height = 100;
+        this.dragging = false;
+        this.offsetX = 0;
+        this.offsetY = 0;
+        this.rotation = random(-0.1, 0.1);
+        this.scale = random(0.8, 1.2);
+        this.foodType = foodType;
+        this.color = this.getFoodColor(foodType);
+      }
+      
+      getFoodColor(foodType) {
+        const colors = {
+          burger: '#8B4513',
+          pizza: '#FF9800',
+          salad: '#4CAF50',
+          pasta: '#FFC107',
+          dessert: '#795548'
+        };
+        return colors[foodType] || '#FF5252';
+      }
+      
+      isHovering(px, py) {
+        return px > this.x - this.width/2 && px < this.x + this.width/2 &&
+               py > this.y - this.height/2 && py < this.y + this.height/2;
+      }
+      
+      display() {
+        if (this.dragging) {
+          this.x = mouseX;
+          this.y = mouseY;
+        }
+        
+        push();
+        translate(this.x, this.y);
+        rotate(this.rotation);
+        scale(this.scale);
+        
+        // Draw food with neo-brutalist style
+        strokeWeight(4);
+        stroke(0);
+        fill(this.color);
+        
+        // Different shapes for different food types
+        switch(this.foodType) {
+          case 'burger':
+            this.drawBurger();
+            break;
+          case 'pizza':
+            this.drawPizza();
+            break;
+          case 'salad':
+            this.drawSalad();
+            break;
+          case 'pasta':
+            this.drawPasta();
+            break;
+          case 'dessert':
+            this.drawDessert();
+            break;
+          default:
+            rect(-this.width/2, -this.height/2, this.width, this.height);
+        }
+        
+        pop();
+      }
+      
+      drawBurger() {
+        // Bun bottom
+        fill('#D2691E');
+        rect(-40, 15, 80, 20, 5);
+        
+        // Patty
+        fill('#8B4513');
+        rect(-35, -5, 70, 25);
+        
+        // Cheese
+        fill('#FFD700');
+        rect(-30, -10, 60, 10);
+        
+        // Lettuce
+        fill('#00FF00');
+        rect(-38, -20, 76, 15);
+        
+        // Bun top
+        fill('#D2691E');
+        arc(0, -25, 80, 60, PI, 0);
+      }
+      
+      drawPizza() {
+        // Pizza base
+        fill('#FFA500');
+        triangle(-40, 40, 40, 40, 0, -40);
+        
+        // Pepperoni
+        fill('#FF0000');
+        circle(-10, 0, 15);
+        circle(15, 10, 15);
+        circle(0, -15, 15);
+      }
+      
+      drawSalad() {
+        // Bowl
+        fill('#FFFFFF');
+        arc(0, 0, 80, 80, 0, PI);
+        
+        // Lettuce
+        fill('#00FF00');
+        for (let i = 0; i < 8; i++) {
+          let x = random(-30, 30);
+          let y = random(-30, 10);
+          ellipse(x, y, 20, 15);
+        }
+        
+        // Tomatoes
+        fill('#FF0000');
+        circle(-20, -10, 15);
+        circle(15, -5, 15);
+      }
+      
+      drawPasta() {
+        // Plate
+        fill('#FFFFFF');
+        ellipse(0, 0, 80, 80);
+        
+        // Pasta
+        stroke('#FFD700');
+        strokeWeight(5);
+        noFill();
+        for (let i = 0; i < 8; i++) {
+          let x1 = random(-30, 30);
+          let y1 = random(-30, 30);
+          let x2 = x1 + random(-20, 20);
+          let y2 = y1 + random(-20, 20);
+          bezier(x1, y1, x1+10, y1-10, x2-10, y2+10, x2, y2);
+        }
+        stroke(0);
+        strokeWeight(4);
+      }
+      
+      drawDessert() {
+        // Cake base
+        fill('#A0522D');
+        rect(-40, 0, 80, 40);
+        
+        // Frosting
+        fill('#FFFFFF');
+        rect(-40, -20, 80, 20);
+        
+        // Cherry
+        fill('#FF0000');
+        circle(0, -25, 15);
+      }
+    }
+    
+    // Handle window resize
+    function windowResized() {
+      const canvasContainer = document.getElementById('canvas-container');
+      resizeCanvas(canvasContainer.offsetWidth, canvasContainer.offsetHeight);
+    }
+  </script>
+</body>
+</html>
